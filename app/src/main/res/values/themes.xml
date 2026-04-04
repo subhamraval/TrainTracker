@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.TrainTracker" parent="Theme.MaterialComponents.Light.DarkActionBar">
+        <item name="colorPrimary">#2E7D32</item>
+        <item name="colorPrimaryVariant">#1B5E20</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorSecondary">#66BB6A</item>
+        <item name="colorOnSecondary">#000000</item>
+        <item name="android:statusBarColor">@color/colorPrimaryVariant</item>
+    </style>
+
+    <color name="colorPrimary">#2E7D32</color>
+    <color name="colorPrimaryVariant">#1B5E20</color>
+    <color name="colorAccent">#66BB6A</color>
+</resources>

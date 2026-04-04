@@ -1,0 +1,264 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#F1F8E9">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- Header -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Train Seat Tracker"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:textColor="#1B5E20"
+            android:gravity="center"
+            android:paddingTop="16dp"
+            android:paddingBottom="20dp" />
+
+        <!-- ═══════════════════════════════ -->
+        <!-- FORM CARD                       -->
+        <!-- ═══════════════════════════════ -->
+        <androidx.cardview.widget.CardView
+            android:id="@+id/formCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            app:cardElevation="4dp"
+            app:cardCornerRadius="12dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <!-- Train Number -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="Train Number (e.g. 12863)"
+                    android:layout_marginBottom="12dp"
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etTrainNo"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="number"
+                        android:maxLength="6" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <!-- From Station -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="From Station Code (e.g. BBS, NDLS)"
+                    android:layout_marginBottom="4dp"
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etFromStation"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="textCapCharacters"
+                        android:maxLength="6" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <!-- Departure time auto-fetch status -->
+                <TextView
+                    android:id="@+id/tvDepartureStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="13sp"
+                    android:textColor="#2E7D32"
+                    android:paddingStart="4dp"
+                    android:paddingBottom="10dp"
+                    android:visibility="gone" />
+
+                <!-- Manual time fallback (hidden by default) -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/layoutManualTime"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="Departure Time (manual — e.g. 05:40)"
+                    android:layout_marginBottom="12dp"
+                    android:visibility="gone"
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etDepartureTime"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="time"
+                        android:maxLength="5" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <!-- To Station -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="To Station Code (e.g. BAM, BCT)"
+                    android:layout_marginBottom="12dp"
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etToStation"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="textCapCharacters"
+                        android:maxLength="6" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <!-- Journey Date -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="Journey Date"
+                    android:layout_marginBottom="12dp"
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etDate"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:focusable="false"
+                        android:clickable="true"
+                        android:cursorVisible="false"
+                        android:hint="Tap to select date" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <!-- Seat Class -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="Seat Class"
+                    android:layout_marginBottom="12dp"
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu">
+                    <AutoCompleteTextView
+                        android:id="@+id/actvClass"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:focusable="false"
+                        android:clickable="true" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <!-- Quota -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="Quota"
+                    android:layout_marginBottom="20dp"
+                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu">
+                    <AutoCompleteTextView
+                        android:id="@+id/actvQuota"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:focusable="false"
+                        android:clickable="true" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <!-- Track Button -->
+                <Button
+                    android:id="@+id/btnTrack"
+                    android:layout_width="match_parent"
+                    android:layout_height="56dp"
+                    android:text="Track Seat"
+                    android:textSize="17sp"
+                    android:textStyle="bold"
+                    android:backgroundTint="#2E7D32" />
+
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- ═══════════════════════════════ -->
+        <!-- TRACKING ACTIVE CARD            -->
+        <!-- ═══════════════════════════════ -->
+        <androidx.cardview.widget.CardView
+            android:id="@+id/trackingCard"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:visibility="gone"
+            app:cardElevation="4dp"
+            app:cardCornerRadius="12dp"
+            app:cardBackgroundColor="#E8F5E9">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="20dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Tracking Active"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
+                    android:textColor="#1B5E20"
+                    android:gravity="center"
+                    android:paddingBottom="12dp" />
+
+                <TextView
+                    android:id="@+id/tvTrackingInfo"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="14sp"
+                    android:textColor="#333333"
+                    android:lineSpacingMultiplier="1.5"
+                    android:gravity="center"
+                    android:paddingBottom="12dp" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="1dp"
+                    android:background="#C8E6C9"
+                    android:layout_marginBottom="12dp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Current Status:"
+                    android:textSize="12sp"
+                    android:textColor="#666666"
+                    android:gravity="center" />
+
+                <TextView
+                    android:id="@+id/tvCurrentStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:textColor="#1B5E20"
+                    android:gravity="center"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="8dp" />
+
+                <TextView
+                    android:id="@+id/tvLastChecked"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="11sp"
+                    android:textColor="#888888"
+                    android:gravity="center"
+                    android:paddingBottom="4dp" />
+
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
+        <!-- Stop Button -->
+        <Button
+            android:id="@+id/btnStop"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:text="Stop Tracking"
+            android:textSize="16sp"
+            android:backgroundTint="#C62828"
+            android:visibility="gone"
+            android:layout_marginBottom="16dp" />
+
+    </LinearLayout>
+</ScrollView>

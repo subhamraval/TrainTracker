@@ -1,0 +1,7 @@
+# Add project specific ProGuard rules here.
+-keep class com.traintracker.** { *; }
+-keep class com.google.gson.** { *; }
+-keepattributes Signature
+-keepattributes *Annotation*
+-dontwarn okhttp3.**
+-dontwarn retrofit2.**
