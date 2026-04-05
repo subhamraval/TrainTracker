@@ -28,6 +28,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private var selectedDate: String = ""
+    private var autoFetchedDepartureTime: String = ""
 
     companion object {
         private const val PREF_BATTERY_ASKED = "battery_opt_asked"
@@ -113,76 +114,125 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun testNow() {
-        if (!validateForm()) return
-
-        binding.btnTestNow.isEnabled = false
-        binding.tvApiResult.visibility = View.VISIBLE
-        binding.tvApiResult.text = "Checking API..."
-        binding.tvApiResult.setTextColor(getColor(android.R.color.darker_gray))
-
         val trainNo     = binding.etTrainNo.text.toString().trim()
         val fromStation = binding.etFromStation.text.toString().trim().uppercase()
         val toStation   = binding.etToStation.text.toString().trim().uppercase()
         val travelClass = binding.actvClass.text.toString()
         val quota       = binding.actvQuota.text.toString()
 
+        if (trainNo.length < 4) { binding.etTrainNo.error = "Train number daalo"; return }
+        if (fromStation.length < 2) { binding.etFromStation.error = "From station daalo"; return }
+        if (toStation.length < 2) { binding.etToStation.error = "To station daalo"; return }
+        if (selectedDate.isEmpty()) { Toast.makeText(this, "Date select karo", Toast.LENGTH_SHORT).show(); return }
+
+        binding.btnTestNow.isEnabled = false
+        binding.tvApiResult.visibility = View.VISIBLE
+        binding.tvApiResult.text = "Testing API + Schedule fetch..."
+        binding.tvApiResult.setTextColor(getColor(android.R.color.darker_gray))
+
         lifecycleScope.launch {
+
+            val resultLines = StringBuilder()
+
+            // ── 1. Availability check ──────────────────────
             try {
                 val rawBody = withContext(Dispatchers.IO) {
                     ApiClient.api.fetchRaw(
-                        trainNo                = trainNo,
-                        travelClass            = travelClass,
-                        quota                  = quota,
-                        sourceStationCode      = fromStation,
-                        destinationStationCode = toStation,
-                        dateOfJourney          = selectedDate
+                        trainNo = trainNo, travelClass = travelClass,
+                        quota = quota, sourceStationCode = fromStation,
+                        destinationStationCode = toStation, dateOfJourney = selectedDate
                     ).string()
                 }
+                val parsed    = ApiClient.gson.fromJson(rawBody, AvailabilityResponse::class.java)
+                val avlList   = parsed?.data?.avlDayList
+                val trainName = parsed?.data?.trainName ?: ""
 
-                // Raw response pehle dikhao
-                binding.tvApiResult.text = "Raw Response (first 300 chars):\n${rawBody.take(300)}"
-                binding.tvApiResult.setTextColor(getColor(android.R.color.holo_blue_dark))
+                if (!avlList.isNullOrEmpty()) {
+                    val target = avlList.find { day -> matchDates(day.availablityDate, selectedDate) }
+                    if (target != null) {
+                        resultLines.appendLine("✅ AVAILABILITY OK")
+                        resultLines.appendLine("Train: $trainName ($trainNo)")
+                        resultLines.appendLine("Status: ${target.availablityStatus}")
+                        resultLines.appendLine("Date: ${target.availablityDate}")
+                    } else {
+                        val dates = avlList.joinToString(", ") { it.availablityDate }
+                        resultLines.appendLine("⚠️ Availability: Date match nahi hua")
+                        resultLines.appendLine("API dates: $dates")
+                    }
+                } else {
+                    resultLines.appendLine("⚠️ Availability: Data empty")
+                    resultLines.appendLine("Error: ${parsed?.data?.errorMessage}")
+                }
+            } catch (e: Exception) {
+                resultLines.appendLine("❌ Availability Error: ${e.message}")
+            }
 
-                // Parse karne ki koshish
-                try {
-                    val parsed = ApiClient.gson.fromJson(rawBody, AvailabilityResponse::class.java)
-                    val avlList   = parsed?.data?.avlDayList
-                    val trainName = parsed?.data?.trainName ?: ""
-                    val errMsg    = parsed?.data?.errorMessage
+            resultLines.appendLine("")
 
-                    when {
-                        !errMsg.isNullOrEmpty() -> {
-                            binding.tvApiResult.text = "API Error: $errMsg"
-                            binding.tvApiResult.setTextColor(getColor(android.R.color.holo_red_dark))
-                        }
-                        avlList.isNullOrEmpty() -> {
-                            binding.tvApiResult.text = "Data empty!\nTrain/Station code check karo.\nRaw: ${rawBody.take(200)}"
-                            binding.tvApiResult.setTextColor(getColor(android.R.color.holo_orange_dark))
-                        }
-                        else -> {
-                            val target = avlList.find { day -> matchDates(day.availablityDate, selectedDate) }
-                            if (target == null) {
-                                val dates = avlList.joinToString(", ") { day -> day.availablityDate }
-                                binding.tvApiResult.text = "Train: $trainName\nAPI dates: $dates\nTumhari date '$selectedDate' match nahi hui!"
-                                binding.tvApiResult.setTextColor(getColor(android.R.color.holo_orange_dark))
-                            } else {
-                                binding.tvApiResult.text =
-                                    "SUCCESS!\nTrain: $trainName\nStatus: ${target.availablityStatus}\nDate: ${target.availablityDate}\n\nAPI sahi kaam kar raha hai!"
-                                binding.tvApiResult.setTextColor(getColor(android.R.color.holo_green_dark))
+            // ── 2. Schedule / Departure time fetch ────────
+            try {
+                val scheduleRaw = withContext(Dispatchers.IO) {
+                    ApiClient.erailApi.getSchedule(trainNo).string()
+                }
+
+                resultLines.appendLine("Schedule Raw (100 chars):")
+                resultLines.appendLine(scheduleRaw.take(100))
+
+                // Erail returns pipe-separated data
+                // Format: StationCode|StationName|ArrivalTime|DepartureTime|...
+                val lines = scheduleRaw.split("~")
+                var foundStation = false
+                for (line in lines) {
+                    val parts = line.split("|")
+                    if (parts.size >= 4) {
+                        val code = parts.getOrNull(1)?.trim() ?: ""
+                        val depTime = parts.getOrNull(3)?.trim() ?: ""
+                        if (code.equals(fromStation, ignoreCase = true)) {
+                            autoFetchedDepartureTime = depTime
+                            foundStation = true
+
+                            // Show/hide manual input
+                            runOnUiThread {
+                                binding.tvDepartureStatus.visibility = View.VISIBLE
+                                binding.tvDepartureStatus.text = "✅ Departure from $fromStation: $depTime (auto-fetched)"
+                                binding.tvDepartureStatus.setTextColor(getColor(android.R.color.holo_green_dark))
+                                binding.layoutManualTime.visibility = View.GONE
                             }
+
+                            resultLines.appendLine("✅ SCHEDULE OK")
+                            resultLines.appendLine("Departure from $fromStation: $depTime")
+                            break
                         }
                     }
-                } catch (parseEx: Exception) {
-                    binding.tvApiResult.text = "Parse Error: ${parseEx.message}\nRaw: ${rawBody.take(200)}"
-                    binding.tvApiResult.setTextColor(getColor(android.R.color.holo_red_dark))
+                }
+                if (!foundStation) {
+                    resultLines.appendLine("⚠️ Schedule: $fromStation not found in response")
+                    resultLines.appendLine("Showing manual input field...")
+                    runOnUiThread {
+                        showManualTimeInput("$fromStation schedule mein nahi mila")
+                    }
                 }
 
             } catch (e: Exception) {
-                binding.tvApiResult.text = "Network Error:\n${e.message}"
-                binding.tvApiResult.setTextColor(getColor(android.R.color.holo_red_dark))
+                resultLines.appendLine("❌ Schedule Error: ${e.message}")
+                runOnUiThread {
+                    showManualTimeInput("Schedule fetch failed")
+                }
             }
+
+            // Show result
+            binding.tvApiResult.text = resultLines.toString()
+            binding.tvApiResult.setTextColor(getColor(android.R.color.holo_green_dark))
             binding.btnTestNow.isEnabled = true
         }
+    }
+
+    private fun showManualTimeInput(reason: String) {
+        autoFetchedDepartureTime = ""
+        binding.tvDepartureStatus.visibility = View.VISIBLE
+        binding.tvDepartureStatus.text = "⚠️ $reason — manually enter karo"
+        binding.tvDepartureStatus.setTextColor(getColor(android.R.color.holo_orange_dark))
+        binding.layoutManualTime.visibility = View.VISIBLE
     }
 
     private fun matchDates(availDate: String, targetDate: String): Boolean {
@@ -194,16 +244,25 @@ class MainActivity : AppCompatActivity() {
                a[2] == b[2]
     }
 
+    private fun getFinalDepartureTime(): String {
+        return if (autoFetchedDepartureTime.isNotEmpty()) autoFetchedDepartureTime
+        else binding.etDepartureTime.text.toString().trim()
+    }
+
     private fun validateForm(): Boolean {
         val trainNo = binding.etTrainNo.text.toString().trim()
         val from    = binding.etFromStation.text.toString().trim()
         val to      = binding.etToStation.text.toString().trim()
-        val depTime = binding.etDepartureTime.text.toString().trim()
+        val depTime = getFinalDepartureTime()
+
         if (trainNo.length < 4) { binding.etTrainNo.error = "Valid train number daalo"; binding.etTrainNo.requestFocus(); return false }
-        if (from.length < 2)    { binding.etFromStation.error = "Station code daalo"; binding.etFromStation.requestFocus(); return false }
-        if (to.length < 2)      { binding.etToStation.error = "Station code daalo"; binding.etToStation.requestFocus(); return false }
+        if (from.length < 2) { binding.etFromStation.error = "Station code daalo"; binding.etFromStation.requestFocus(); return false }
+        if (to.length < 2) { binding.etToStation.error = "Station code daalo"; binding.etToStation.requestFocus(); return false }
         if (selectedDate.isEmpty()) { Toast.makeText(this, "Journey date select karo", Toast.LENGTH_SHORT).show(); return false }
-        if (!depTime.matches(Regex("\\d{1,2}:\\d{2}"))) { binding.etDepartureTime.error = "HH:MM format (e.g. 05:40)"; binding.etDepartureTime.requestFocus(); return false }
+        if (!depTime.matches(Regex("\\d{1,2}:\\d{2}"))) {
+            showManualTimeInput("Departure time daalo")
+            return false
+        }
         return true
     }
 
@@ -215,7 +274,7 @@ class MainActivity : AppCompatActivity() {
             dateOfJourney = selectedDate,
             travelClass   = binding.actvClass.text.toString(),
             quota         = binding.actvQuota.text.toString(),
-            departureTime = binding.etDepartureTime.text.toString().trim()
+            departureTime = getFinalDepartureTime()
         )
         TrackingService.startTracking(this, config)
         refreshUI()
@@ -256,7 +315,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun requestNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
             }
         }
