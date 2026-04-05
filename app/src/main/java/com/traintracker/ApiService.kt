@@ -5,10 +5,20 @@ import okhttp3.OkHttpClient
 import okhttp3.ResponseBody
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Query
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+
+// Erail schedule models
+data class ErailScheduleStation(
+    val stationCode: String?,
+    val stationName: String?,
+    val departureTime: String?,  // "05:40"
+    val arrivalTime: String?,
+    val serialNo: Int?
+)
 
 interface ConfirmTktApi {
     @POST("api/v1/availability/fetchAvailability")
@@ -30,13 +40,23 @@ interface ConfirmTktApi {
     ): ResponseBody
 }
 
+// Erail API — train schedule ke liye
+interface ErailApi {
+    @GET("rail/getTrains.aspx")
+    suspend fun getSchedule(
+        @Query("TrainNo") trainNo: String,
+        @Query("action") action: String = "GetTrainTimeTable"
+    ): ResponseBody
+}
+
 object ApiClient {
     private const val BASE_URL = "https://cttrainsapi.confirmtkt.com/"
+    private const val ERAIL_URL = "https://erail.in/"
     private val DEVICE_ID: String = UUID.randomUUID().toString()
 
     val gson = GsonBuilder().setLenient().create()
 
-    private val httpClient = OkHttpClient.Builder()
+    private val confirmTktClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
@@ -63,10 +83,29 @@ object ApiClient {
         }
         .build()
 
+    private val erailClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .addInterceptor { chain ->
+            val req = chain.request().newBuilder()
+                .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36")
+                .addHeader("Accept", "*/*")
+                .build()
+            chain.proceed(req)
+        }
+        .build()
+
     val api: ConfirmTktApi = Retrofit.Builder()
         .baseUrl(BASE_URL)
-        .client(httpClient)
+        .client(confirmTktClient)
         .addConverterFactory(GsonConverterFactory.create(gson))
         .build()
         .create(ConfirmTktApi::class.java)
+
+    val erailApi: ErailApi = Retrofit.Builder()
+        .baseUrl(ERAIL_URL)
+        .client(erailClient)
+        .addConverterFactory(GsonConverterFactory.create(gson))
+        .build()
+        .create(ErailApi::class.java)
 }
