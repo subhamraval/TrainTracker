@@ -47,7 +47,6 @@ object ApiClient {
                 .addHeader("Deviceid", DEVICE_ID)
                 .addHeader("Content-Type", "application/json")
                 .addHeader("Accept", "*/*")
-                .addHeader("Accept-Encoding", "gzip, deflate, br, zstd")
                 .addHeader("Accept-Language", "en-US,en;q=0.9")
                 .addHeader("Origin", "https://www.confirmtkt.com")
                 .addHeader("Referer", "https://www.confirmtkt.com/")
