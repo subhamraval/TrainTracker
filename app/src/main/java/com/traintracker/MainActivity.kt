@@ -38,7 +38,6 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
-
         NotificationHelper.createChannels(this)
         requestNotificationPermission()
         askBatteryOptimizationIfNeeded()
@@ -56,22 +55,15 @@ class MainActivity : AppCompatActivity() {
         val alreadyAsked = prefs.getBoolean(PREF_BATTERY_ASKED, false)
         val pm = getSystemService(POWER_SERVICE) as PowerManager
         val isIgnoring = pm.isIgnoringBatteryOptimizations(packageName)
-
         if (!isIgnoring && !alreadyAsked) {
             prefs.edit().putBoolean(PREF_BATTERY_ASKED, true).apply()
             AlertDialog.Builder(this)
                 .setTitle("Battery Permission Zaroori Hai!")
-                .setMessage(
-                    "Background mein tracking karne ke liye Battery Optimization OFF karna padega.\n\n" +
-                    "Bina iske Android app ko kill kar dega aur tracking ruk jayegi.\n\n" +
-                    "Please Allow karo."
-                )
+                .setMessage("Background tracking ke liye Battery Optimization OFF karo.\n\nPlease Allow karo.")
                 .setPositiveButton("Allow") { _, _ ->
-                    startActivity(
-                        Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                            data = Uri.parse("package:$packageName")
-                        }
-                    )
+                    startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                        data = Uri.parse("package:$packageName")
+                    })
                 }
                 .setNegativeButton("Baad Mein") { d, _ -> d.dismiss() }
                 .setCancelable(false)
@@ -88,116 +80,110 @@ class MainActivity : AppCompatActivity() {
 
     private fun setupClassDropdown() {
         val classes = listOf("SL", "3A", "2A", "1A", "CC", "2S", "EC", "FC")
-        binding.actvClass.setAdapter(
-            ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, classes)
-        )
+        binding.actvClass.setAdapter(ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, classes))
         binding.actvClass.setText("SL", false)
     }
 
     private fun setupQuotaDropdown() {
         val quotas = listOf("GN", "TQ", "LD", "HP", "SS", "YU")
-        binding.actvQuota.setAdapter(
-            ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, quotas)
-        )
+        binding.actvQuota.setAdapter(ArrayAdapter(this, android.R.layout.simple_dropdown_item_1line, quotas))
         binding.actvQuota.setText("GN", false)
     }
 
     private fun setupDatePicker() {
         binding.etDate.setOnClickListener {
             val cal = Calendar.getInstance()
-            DatePickerDialog(
-                this,
-                { _, year, month, day ->
-                    selectedDate = String.format("%02d-%02d-%04d", day, month + 1, year)
-                    binding.etDate.setText(selectedDate)
-                },
-                cal.get(Calendar.YEAR),
-                cal.get(Calendar.MONTH),
-                cal.get(Calendar.DAY_OF_MONTH)
-            ).apply {
-                datePicker.minDate = System.currentTimeMillis() - 1000
-            }.show()
+            DatePickerDialog(this, { _, year, month, day ->
+                selectedDate = String.format("%02d-%02d-%04d", day, month + 1, year)
+                binding.etDate.setText(selectedDate)
+            }, cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH))
+                .apply { datePicker.minDate = System.currentTimeMillis() - 1000 }
+                .show()
         }
     }
 
     private fun setupButtons() {
-        binding.btnTrack.setOnClickListener {
-            if (validateForm()) startTracking()
-        }
+        binding.btnTrack.setOnClickListener { if (validateForm()) startTracking() }
         binding.btnStop.setOnClickListener {
             TrackingService.stopManually(this)
             TrackingPrefs.setTracking(this, false)
             refreshUI()
         }
-        binding.btnTestNow.setOnClickListener {
-            testNow()
-        }
+        binding.btnTestNow.setOnClickListener { testNow() }
     }
 
-   private fun testNow() {
-    if (!validateForm()) return
+    private fun testNow() {
+        if (!validateForm()) return
 
-    binding.btnTestNow.isEnabled = false
-    binding.tvApiResult.visibility = View.VISIBLE
-    binding.tvApiResult.text = "Checking..."
+        binding.btnTestNow.isEnabled = false
+        binding.tvApiResult.visibility = View.VISIBLE
+        binding.tvApiResult.text = "Checking API..."
+        binding.tvApiResult.setTextColor(getColor(android.R.color.darker_gray))
 
-    val trainNo     = binding.etTrainNo.text.toString().trim()
-    val fromStation = binding.etFromStation.text.toString().trim().uppercase()
-    val toStation   = binding.etToStation.text.toString().trim().uppercase()
-    val travelClass = binding.actvClass.text.toString()
-    val quota       = binding.actvQuota.text.toString()
+        val trainNo     = binding.etTrainNo.text.toString().trim()
+        val fromStation = binding.etFromStation.text.toString().trim().uppercase()
+        val toStation   = binding.etToStation.text.toString().trim().uppercase()
+        val travelClass = binding.actvClass.text.toString()
+        val quota       = binding.actvQuota.text.toString()
 
-    lifecycleScope.launch {
-        try {
-            val rawBody = withContext(Dispatchers.IO) {
-                ApiClient.api.fetchAvailabilityRaw(
-                    trainNo                = trainNo,
-                    travelClass            = travelClass,
-                    quota                  = quota,
-                    sourceStationCode      = fromStation,
-                    destinationStationCode = toStation,
-                    dateOfJourney          = selectedDate
-                ).string()
-            }
-
-            // Raw response pehle 500 chars dikhao — debug ke liye
-            binding.tvApiResult.text = "Raw Response:\n${rawBody.take(500)}"
-            binding.tvApiResult.setTextColor(getColor(android.R.color.holo_blue_dark))
-
-            // Try to parse as JSON
+        lifecycleScope.launch {
             try {
-                val gson = com.google.gson.GsonBuilder().setLenient().create()
-                val parsed = gson.fromJson(rawBody, AvailabilityResponse::class.java)
-                val avlList = parsed?.data?.avlDayList
-                val trainName = parsed?.data?.trainName ?: ""
-
-                if (avlList.isNullOrEmpty()) {
-                    binding.tvApiResult.text = "Parsed OK but data empty!\nRaw: ${rawBody.take(300)}"
-                    binding.tvApiResult.setTextColor(getColor(android.R.color.holo_orange_dark))
-                } else {
-                    val target = avlList.find { matchDates(it.availablityDate, selectedDate) }
-                    if (target == null) {
-                        val dates = avlList.joinToString(", ") { it.availablityDate }
-                        binding.tvApiResult.text = "Train: $trainName\nDates in API: $dates\nTumhari date '$selectedDate' nahi mili!"
-                        binding.tvApiResult.setTextColor(getColor(android.R.color.holo_orange_dark))
-                    } else {
-                        binding.tvApiResult.text =
-                            "SUCCESS!\nTrain: $trainName\nStatus: ${target.availablityStatus}\nDate: ${target.availablityDate}"
-                        binding.tvApiResult.setTextColor(getColor(android.R.color.holo_green_dark))
-                    }
+                val rawBody = withContext(Dispatchers.IO) {
+                    ApiClient.api.fetchRaw(
+                        trainNo                = trainNo,
+                        travelClass            = travelClass,
+                        quota                  = quota,
+                        sourceStationCode      = fromStation,
+                        destinationStationCode = toStation,
+                        dateOfJourney          = selectedDate
+                    ).string()
                 }
-            } catch (parseEx: Exception) {
-                binding.tvApiResult.text = "Parse Error: ${parseEx.message}\n\nRaw: ${rawBody.take(300)}"
+
+                // Raw response pehle dikhao
+                binding.tvApiResult.text = "Raw Response (first 300 chars):\n${rawBody.take(300)}"
+                binding.tvApiResult.setTextColor(getColor(android.R.color.holo_blue_dark))
+
+                // Parse karne ki koshish
+                try {
+                    val parsed = ApiClient.gson.fromJson(rawBody, AvailabilityResponse::class.java)
+                    val avlList   = parsed?.data?.avlDayList
+                    val trainName = parsed?.data?.trainName ?: ""
+                    val errMsg    = parsed?.data?.errorMessage
+
+                    when {
+                        !errMsg.isNullOrEmpty() -> {
+                            binding.tvApiResult.text = "API Error: $errMsg"
+                            binding.tvApiResult.setTextColor(getColor(android.R.color.holo_red_dark))
+                        }
+                        avlList.isNullOrEmpty() -> {
+                            binding.tvApiResult.text = "Data empty!\nTrain/Station code check karo.\nRaw: ${rawBody.take(200)}"
+                            binding.tvApiResult.setTextColor(getColor(android.R.color.holo_orange_dark))
+                        }
+                        else -> {
+                            val target = avlList.find { day -> matchDates(day.availablityDate, selectedDate) }
+                            if (target == null) {
+                                val dates = avlList.joinToString(", ") { day -> day.availablityDate }
+                                binding.tvApiResult.text = "Train: $trainName\nAPI dates: $dates\nTumhari date '$selectedDate' match nahi hui!"
+                                binding.tvApiResult.setTextColor(getColor(android.R.color.holo_orange_dark))
+                            } else {
+                                binding.tvApiResult.text =
+                                    "SUCCESS!\nTrain: $trainName\nStatus: ${target.availablityStatus}\nDate: ${target.availablityDate}\n\nAPI sahi kaam kar raha hai!"
+                                binding.tvApiResult.setTextColor(getColor(android.R.color.holo_green_dark))
+                            }
+                        }
+                    }
+                } catch (parseEx: Exception) {
+                    binding.tvApiResult.text = "Parse Error: ${parseEx.message}\nRaw: ${rawBody.take(200)}"
+                    binding.tvApiResult.setTextColor(getColor(android.R.color.holo_red_dark))
+                }
+
+            } catch (e: Exception) {
+                binding.tvApiResult.text = "Network Error:\n${e.message}"
                 binding.tvApiResult.setTextColor(getColor(android.R.color.holo_red_dark))
             }
-
-        } catch (e: Exception) {
-            binding.tvApiResult.text = "Network Error:\n${e.message}"
-            binding.tvApiResult.setTextColor(getColor(android.R.color.holo_red_dark))
+            binding.btnTestNow.isEnabled = true
         }
-        binding.btnTestNow.isEnabled = true
     }
-}
 
     private fun matchDates(availDate: String, targetDate: String): Boolean {
         val a = availDate.split("-")
@@ -213,27 +199,11 @@ class MainActivity : AppCompatActivity() {
         val from    = binding.etFromStation.text.toString().trim()
         val to      = binding.etToStation.text.toString().trim()
         val depTime = binding.etDepartureTime.text.toString().trim()
-
-        if (trainNo.length < 4) {
-            binding.etTrainNo.error = "Valid train number daalo"
-            binding.etTrainNo.requestFocus(); return false
-        }
-        if (from.length < 2) {
-            binding.etFromStation.error = "Station code daalo (e.g. BBS)"
-            binding.etFromStation.requestFocus(); return false
-        }
-        if (to.length < 2) {
-            binding.etToStation.error = "Station code daalo (e.g. BAM)"
-            binding.etToStation.requestFocus(); return false
-        }
-        if (selectedDate.isEmpty()) {
-            Toast.makeText(this, "Journey date select karo", Toast.LENGTH_SHORT).show()
-            return false
-        }
-        if (!depTime.matches(Regex("\\d{1,2}:\\d{2}"))) {
-            binding.etDepartureTime.error = "HH:MM format mein daalo (e.g. 05:40)"
-            binding.etDepartureTime.requestFocus(); return false
-        }
+        if (trainNo.length < 4) { binding.etTrainNo.error = "Valid train number daalo"; binding.etTrainNo.requestFocus(); return false }
+        if (from.length < 2)    { binding.etFromStation.error = "Station code daalo"; binding.etFromStation.requestFocus(); return false }
+        if (to.length < 2)      { binding.etToStation.error = "Station code daalo"; binding.etToStation.requestFocus(); return false }
+        if (selectedDate.isEmpty()) { Toast.makeText(this, "Journey date select karo", Toast.LENGTH_SHORT).show(); return false }
+        if (!depTime.matches(Regex("\\d{1,2}:\\d{2}"))) { binding.etDepartureTime.error = "HH:MM format (e.g. 05:40)"; binding.etDepartureTime.requestFocus(); return false }
         return true
     }
 
@@ -249,7 +219,7 @@ class MainActivity : AppCompatActivity() {
         )
         TrackingService.startTracking(this, config)
         refreshUI()
-        Toast.makeText(this, "Tracking shuru! Pehla check abhi ho raha hai...", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "Tracking shuru!", Toast.LENGTH_LONG).show()
     }
 
     private fun refreshUI() {
@@ -264,21 +234,18 @@ class MainActivity : AppCompatActivity() {
             binding.formCard.visibility     = View.GONE
             binding.trackingCard.visibility = View.VISIBLE
             binding.tvApiResult.visibility  = View.GONE
-
             binding.tvTrackingInfo.text =
                 "Train: ${config.trainNo}  |  ${config.travelClass}  |  ${config.quota}\n" +
                 "${config.fromStation} → ${config.toStation}\n" +
                 "Date: ${config.dateOfJourney}  |  Departs: ${config.departureTime}"
-
             val emoji = when {
                 lastStatus.startsWith("CURR_AVBL") -> "🟢"
                 lastStatus.startsWith("AVAILABLE") -> "🔵"
                 lastStatus == "REGRET"             -> "🔴"
-                lastStatus.isEmpty()               -> "🟡"
                 else                               -> "🟡"
             }
             binding.tvCurrentStatus.text = if (lastStatus.isEmpty()) "$emoji Pehla check ho raha hai..." else "$emoji $lastStatus"
-            binding.tvLastChecked.text   = if (lastChecked.isEmpty()) "Abhi check ho raha hai..." else "Last checked: $lastChecked  |  Next: ~10 min"
+            binding.tvLastChecked.text   = if (lastChecked.isEmpty()) "Abhi check ho raha hai..." else "Last: $lastChecked | Next: ~10 min"
         } else {
             binding.btnTrack.visibility     = View.VISIBLE
             binding.btnStop.visibility      = View.GONE
@@ -289,10 +256,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun requestNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(this,
-                    arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
             }
         }
     }
