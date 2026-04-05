@@ -2,8 +2,10 @@ package com.traintracker
 
 import com.google.gson.GsonBuilder
 import okhttp3.OkHttpClient
+import okhttp3.ResponseBody
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import retrofit2.converter.scalars.ScalarsConverterFactory
 import retrofit2.http.POST
 import retrofit2.http.Query
 import java.util.UUID
@@ -11,7 +13,7 @@ import java.util.concurrent.TimeUnit
 
 interface ConfirmTktApi {
     @POST("api/v1/availability/fetchAvailability")
-    suspend fun fetchAvailability(
+    suspend fun fetchAvailabilityRaw(
         @Query("trainNo") trainNo: String,
         @Query("travelClass") travelClass: String,
         @Query("quota") quota: String,
@@ -26,7 +28,7 @@ interface ConfirmTktApi {
         @Query("showNewMealOptions") showNewMealOptions: Boolean = true,
         @Query("showNewAlternates") showNewAlternates: Boolean = false,
         @Query("showNewAltText") showNewAltText: Boolean = true
-    ): AvailabilityResponse
+    ): ResponseBody
 }
 
 object ApiClient {
@@ -61,15 +63,10 @@ object ApiClient {
         }
         .build()
 
-    // ← Yahi fix hai — lenient Gson
-    private val gson = GsonBuilder()
-        .setLenient()
-        .create()
-
     val api: ConfirmTktApi = Retrofit.Builder()
         .baseUrl(BASE_URL)
         .client(httpClient)
-        .addConverterFactory(GsonConverterFactory.create(gson))
+        .addConverterFactory(GsonConverterFactory.create())
         .build()
         .create(ConfirmTktApi::class.java)
 }
