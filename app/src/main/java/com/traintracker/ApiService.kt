@@ -30,7 +30,6 @@ interface ConfirmTktApi {
         @Query("showNewAltText") showNewAltText: Boolean = true
     ): ResponseBody
 
-    // ConfirmTkt ka train schedule API
     @GET("api/v1/trains/getTrainInfo")
     suspend fun getTrainInfo(
         @Query("trainNo") trainNo: String
@@ -38,10 +37,11 @@ interface ConfirmTktApi {
 }
 
 interface ErailApi {
-    @GET("rail/getTrains.aspx")
-    suspend fun getSchedule(
-        @Query("TrainNo") trainNo: String,
-        @Query("action") action: String = "GetTrainTimeTable"
+    @GET("data.aspx")
+    suspend fun getScheduleData(
+        @Query("Action") action: String = "GetTrainTimeTable",
+        @Query("Password") password: String = "2012",
+        @Query("Data1") trainNo: String
     ): ResponseBody
 }
 
@@ -101,45 +101,52 @@ object ApiClient {
         .build()
         .create(ErailApi::class.java)
 
-    // Departure time fetch karo — pehle ConfirmTkt try, phir Erail fallback
-    suspend fun getDepartureTime(trainNo: String, fromStation: String): String? {
+    suspend fun getDepartureTime(trainNo: String, fromStation: String): Pair<String?, String> {
+        val debug = StringBuilder()
 
-        // ── Method 1: ConfirmTkt getTrainInfo ──────────────────────
+        // Method 1 — ConfirmTkt getTrainInfo
         try {
             val raw = api.getTrainInfo(trainNo).string()
+            debug.appendLine("CT raw(150): ${raw.take(150)}")
             val time = parseConfirmTktSchedule(raw, fromStation)
-            if (!time.isNullOrEmpty()) return time
-        } catch (e: Exception) { /* fallback */ }
+            if (!time.isNullOrEmpty()) return Pair(time, debug.toString())
+            debug.appendLine("CT: $fromStation not found")
+        } catch (e: Exception) {
+            debug.appendLine("CT error: ${e.message?.take(100)}")
+        }
 
-        // ── Method 2: Erail fixed parsing ─────────────────────────
+        // Method 2 — Erail data.aspx
         try {
-            val raw = erailApi.getSchedule(trainNo).string()
+            val raw = erailApi.getScheduleData(trainNo = trainNo).string()
+            debug.appendLine("Erail raw(150): ${raw.take(150)}")
             val time = parseErailSchedule(raw, fromStation)
-            if (!time.isNullOrEmpty()) return time
-        } catch (e: Exception) { /* fallback */ }
+            if (!time.isNullOrEmpty()) return Pair(time, debug.toString())
+            debug.appendLine("Erail: $fromStation not found")
+        } catch (e: Exception) {
+            debug.appendLine("Erail error: ${e.message?.take(100)}")
+        }
 
-        return null
+        return Pair(null, debug.toString())
     }
 
     private fun parseConfirmTktSchedule(raw: String, fromStation: String): String? {
-        // ConfirmTkt response parse karo — JSON array of stations expected
         return try {
-            val jsonArray = gson.fromJson(raw, com.google.gson.JsonElement::class.java)
+            val el = gson.fromJson(raw, com.google.gson.JsonElement::class.java)
             val arr = when {
-                jsonArray.isJsonArray -> jsonArray.asJsonArray
-                jsonArray.isJsonObject -> {
-                    // nested mein dhundho
-                    val obj = jsonArray.asJsonObject
+                el.isJsonArray -> el.asJsonArray
+                el.isJsonObject -> {
+                    val obj = el.asJsonObject
                     obj.getAsJsonArray("data")
                         ?: obj.getAsJsonArray("stationList")
                         ?: obj.getAsJsonArray("stations")
+                        ?: obj.getAsJsonArray("body")
                 }
                 else -> null
             } ?: return null
 
-            for (el in arr) {
-                if (!el.isJsonObject) continue
-                val obj = el.asJsonObject
+            for (item in arr) {
+                if (!item.isJsonObject) continue
+                val obj = item.asJsonObject
                 val code = obj.get("stationCode")?.asString
                     ?: obj.get("stnCode")?.asString
                     ?: obj.get("code")?.asString
@@ -155,17 +162,13 @@ object ApiClient {
     }
 
     private fun parseErailSchedule(raw: String, fromStation: String): String? {
-        // Erail format: lines separated by ~
-        // Station line format: SerialNo|StationCode|StationName|ArrTime|DepTime|Distance|...
+        // Erail pipe-separated: index1=StationCode, index4=DepTime
         val lines = raw.split("~")
         for (line in lines) {
             val parts = line.split("|")
-            // Valid station line has at least 5 fields
             if (parts.size < 5) continue
-            // StationCode is at index 1
             val code = parts.getOrNull(1)?.trim() ?: continue
             if (code.equals(fromStation, ignoreCase = true)) {
-                // DepartureTime at index 4
                 val dep = parts.getOrNull(4)?.trim()
                 if (!dep.isNullOrEmpty() && dep != "--" && dep.contains(":")) {
                     return dep
