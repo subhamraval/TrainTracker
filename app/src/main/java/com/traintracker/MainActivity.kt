@@ -127,106 +127,71 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnTestNow.isEnabled = false
         binding.tvApiResult.visibility = View.VISIBLE
-        binding.tvApiResult.text = "Testing API + Schedule fetch..."
+        binding.tvApiResult.text = "Testing..."
         binding.tvApiResult.setTextColor(getColor(android.R.color.darker_gray))
 
         lifecycleScope.launch {
+            val result = StringBuilder()
 
-            val resultLines = StringBuilder()
-
-            // ── 1. Availability check ──────────────────────
+            // ── 1. Availability ───────────────────────────────────
             try {
-                val rawBody = withContext(Dispatchers.IO) {
+                val raw    = withContext(Dispatchers.IO) {
                     ApiClient.api.fetchRaw(
                         trainNo = trainNo, travelClass = travelClass,
                         quota = quota, sourceStationCode = fromStation,
                         destinationStationCode = toStation, dateOfJourney = selectedDate
                     ).string()
                 }
-                val parsed    = ApiClient.gson.fromJson(rawBody, AvailabilityResponse::class.java)
+                val parsed    = ApiClient.gson.fromJson(raw, AvailabilityResponse::class.java)
                 val avlList   = parsed?.data?.avlDayList
                 val trainName = parsed?.data?.trainName ?: ""
+                val target    = avlList?.find { day -> matchDates(day.availablityDate, selectedDate) }
 
-                if (!avlList.isNullOrEmpty()) {
-                    val target = avlList.find { day -> matchDates(day.availablityDate, selectedDate) }
-                    if (target != null) {
-                        resultLines.appendLine("✅ AVAILABILITY OK")
-                        resultLines.appendLine("Train: $trainName ($trainNo)")
-                        resultLines.appendLine("Status: ${target.availablityStatus}")
-                        resultLines.appendLine("Date: ${target.availablityDate}")
-                    } else {
-                        val dates = avlList.joinToString(", ") { it.availablityDate }
-                        resultLines.appendLine("⚠️ Availability: Date match nahi hua")
-                        resultLines.appendLine("API dates: $dates")
-                    }
+                if (target != null) {
+                    result.appendLine("✅ AVAILABILITY OK")
+                    result.appendLine("Train: $trainName")
+                    result.appendLine("Status: ${target.availablityStatus}")
                 } else {
-                    resultLines.appendLine("⚠️ Availability: Data empty")
-                    resultLines.appendLine("Error: ${parsed?.data?.errorMessage}")
+                    result.appendLine("⚠️ Availability: data nahi mila")
+                    result.appendLine("Error: ${parsed?.data?.errorMessage}")
                 }
             } catch (e: Exception) {
-                resultLines.appendLine("❌ Availability Error: ${e.message}")
+                result.appendLine("❌ Availability Error: ${e.message}")
             }
 
-            resultLines.appendLine("")
+            result.appendLine("")
 
-            // ── 2. Schedule / Departure time fetch ────────
-            try {
-                val scheduleRaw = withContext(Dispatchers.IO) {
-                    ApiClient.erailApi.getSchedule(trainNo).string()
-                }
+            // ── 2. Departure Time ─────────────────────────────────
+            result.appendLine("Departure time fetch kar raha hai...")
+            binding.tvApiResult.text = result.toString()
 
-                resultLines.appendLine("Schedule Raw (100 chars):")
-                resultLines.appendLine(scheduleRaw.take(100))
+            val depTime = withContext(Dispatchers.IO) {
+                ApiClient.getDepartureTime(trainNo, fromStation)
+            }
 
-                // Erail returns pipe-separated data
-                // Format: StationCode|StationName|ArrivalTime|DepartureTime|...
-                val lines = scheduleRaw.split("~")
-                var foundStation = false
-                for (line in lines) {
-                    val parts = line.split("|")
-                    if (parts.size >= 4) {
-                        val code = parts.getOrNull(1)?.trim() ?: ""
-                        val depTime = parts.getOrNull(3)?.trim() ?: ""
-                        if (code.equals(fromStation, ignoreCase = true)) {
-                            autoFetchedDepartureTime = depTime
-                            foundStation = true
-
-                            // Show/hide manual input
-                            runOnUiThread {
-                                binding.tvDepartureStatus.visibility = View.VISIBLE
-                                binding.tvDepartureStatus.text = "✅ Departure from $fromStation: $depTime (auto-fetched)"
-                                binding.tvDepartureStatus.setTextColor(getColor(android.R.color.holo_green_dark))
-                                binding.layoutManualTime.visibility = View.GONE
-                            }
-
-                            resultLines.appendLine("✅ SCHEDULE OK")
-                            resultLines.appendLine("Departure from $fromStation: $depTime")
-                            break
-                        }
-                    }
-                }
-                if (!foundStation) {
-                    resultLines.appendLine("⚠️ Schedule: $fromStation not found in response")
-                    resultLines.appendLine("Showing manual input field...")
-                    runOnUiThread {
-                        showManualTimeInput("$fromStation schedule mein nahi mila")
-                    }
-                }
-
-            } catch (e: Exception) {
-                resultLines.appendLine("❌ Schedule Error: ${e.message}")
+            if (!depTime.isNullOrEmpty()) {
+                autoFetchedDepartureTime = depTime
+                result.appendLine("✅ DEPARTURE TIME OK")
+                result.appendLine("$fromStation se departure: $depTime")
                 runOnUiThread {
-                    showManualTimeInput("Schedule fetch failed")
+                    binding.tvDepartureStatus.visibility = View.VISIBLE
+                    binding.tvDepartureStatus.text = "✅ Departure from $fromStation: $depTime"
+                    binding.tvDepartureStatus.setTextColor(getColor(android.R.color.holo_green_dark))
+                    binding.layoutManualTime.visibility = View.GONE
                 }
+            } else {
+                autoFetchedDepartureTime = ""
+                result.appendLine("⚠️ Departure time auto-fetch failed")
+                result.appendLine("Manual input field dikhaya")
+                runOnUiThread { showManualTimeInput("Auto-fetch failed — manually daalo") }
             }
 
-            // Show result
-            binding.tvApiResult.text = resultLines.toString()
+            binding.tvApiResult.text = result.toString()
             binding.tvApiResult.setTextColor(getColor(android.R.color.holo_green_dark))
             binding.btnTestNow.isEnabled = true
         }
     }
-
+    
     private fun showManualTimeInput(reason: String) {
         autoFetchedDepartureTime = ""
         binding.tvDepartureStatus.visibility = View.VISIBLE
