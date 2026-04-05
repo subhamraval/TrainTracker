@@ -11,15 +11,6 @@ import retrofit2.http.Query
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
-// Erail schedule models
-data class ErailScheduleStation(
-    val stationCode: String?,
-    val stationName: String?,
-    val departureTime: String?,  // "05:40"
-    val arrivalTime: String?,
-    val serialNo: Int?
-)
-
 interface ConfirmTktApi {
     @POST("api/v1/availability/fetchAvailability")
     suspend fun fetchRaw(
@@ -38,9 +29,14 @@ interface ConfirmTktApi {
         @Query("showNewAlternates") showNewAlternates: Boolean = false,
         @Query("showNewAltText") showNewAltText: Boolean = true
     ): ResponseBody
+
+    // ConfirmTkt ka train schedule API
+    @GET("api/v1/trains/getTrainInfo")
+    suspend fun getTrainInfo(
+        @Query("trainNo") trainNo: String
+    ): ResponseBody
 }
 
-// Erail API — train schedule ke liye
 interface ErailApi {
     @GET("rail/getTrains.aspx")
     suspend fun getSchedule(
@@ -50,7 +46,7 @@ interface ErailApi {
 }
 
 object ApiClient {
-    private const val BASE_URL = "https://cttrainsapi.confirmtkt.com/"
+    private const val BASE_URL  = "https://cttrainsapi.confirmtkt.com/"
     private const val ERAIL_URL = "https://erail.in/"
     private val DEVICE_ID: String = UUID.randomUUID().toString()
 
@@ -73,15 +69,12 @@ object ApiClient {
                 .addHeader("Sec-Fetch-Dest", "empty")
                 .addHeader("Sec-Fetch-Mode", "cors")
                 .addHeader("Sec-Fetch-Site", "same-site")
-                .addHeader(
-                    "User-Agent",
+                .addHeader("User-Agent",
                     "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 " +
-                    "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
-                )
+                    "(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
                 .build()
             chain.proceed(request)
-        }
-        .build()
+        }.build()
 
     private val erailClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -92,8 +85,7 @@ object ApiClient {
                 .addHeader("Accept", "*/*")
                 .build()
             chain.proceed(req)
-        }
-        .build()
+        }.build()
 
     val api: ConfirmTktApi = Retrofit.Builder()
         .baseUrl(BASE_URL)
@@ -108,4 +100,78 @@ object ApiClient {
         .addConverterFactory(GsonConverterFactory.create(gson))
         .build()
         .create(ErailApi::class.java)
+
+    // Departure time fetch karo — pehle ConfirmTkt try, phir Erail fallback
+    suspend fun getDepartureTime(trainNo: String, fromStation: String): String? {
+
+        // ── Method 1: ConfirmTkt getTrainInfo ──────────────────────
+        try {
+            val raw = api.getTrainInfo(trainNo).string()
+            val time = parseConfirmTktSchedule(raw, fromStation)
+            if (!time.isNullOrEmpty()) return time
+        } catch (e: Exception) { /* fallback */ }
+
+        // ── Method 2: Erail fixed parsing ─────────────────────────
+        try {
+            val raw = erailApi.getSchedule(trainNo).string()
+            val time = parseErailSchedule(raw, fromStation)
+            if (!time.isNullOrEmpty()) return time
+        } catch (e: Exception) { /* fallback */ }
+
+        return null
+    }
+
+    private fun parseConfirmTktSchedule(raw: String, fromStation: String): String? {
+        // ConfirmTkt response parse karo — JSON array of stations expected
+        return try {
+            val jsonArray = gson.fromJson(raw, com.google.gson.JsonElement::class.java)
+            val arr = when {
+                jsonArray.isJsonArray -> jsonArray.asJsonArray
+                jsonArray.isJsonObject -> {
+                    // nested mein dhundho
+                    val obj = jsonArray.asJsonObject
+                    obj.getAsJsonArray("data")
+                        ?: obj.getAsJsonArray("stationList")
+                        ?: obj.getAsJsonArray("stations")
+                }
+                else -> null
+            } ?: return null
+
+            for (el in arr) {
+                if (!el.isJsonObject) continue
+                val obj = el.asJsonObject
+                val code = obj.get("stationCode")?.asString
+                    ?: obj.get("stnCode")?.asString
+                    ?: obj.get("code")?.asString
+                    ?: continue
+                if (code.equals(fromStation, ignoreCase = true)) {
+                    return obj.get("departureTime")?.asString
+                        ?: obj.get("depTime")?.asString
+                        ?: obj.get("departure")?.asString
+                }
+            }
+            null
+        } catch (e: Exception) { null }
+    }
+
+    private fun parseErailSchedule(raw: String, fromStation: String): String? {
+        // Erail format: lines separated by ~
+        // Station line format: SerialNo|StationCode|StationName|ArrTime|DepTime|Distance|...
+        val lines = raw.split("~")
+        for (line in lines) {
+            val parts = line.split("|")
+            // Valid station line has at least 5 fields
+            if (parts.size < 5) continue
+            // StationCode is at index 1
+            val code = parts.getOrNull(1)?.trim() ?: continue
+            if (code.equals(fromStation, ignoreCase = true)) {
+                // DepartureTime at index 4
+                val dep = parts.getOrNull(4)?.trim()
+                if (!dep.isNullOrEmpty() && dep != "--" && dep.contains(":")) {
+                    return dep
+                }
+            }
+        }
+        return null
+    }
 }
