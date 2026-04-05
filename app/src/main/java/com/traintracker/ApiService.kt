@@ -3,33 +3,12 @@ package com.traintracker
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
-import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Query
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
-// ── Train Schedule Models ──────────────────────────────────────────────
-data class ScheduleResponse(
-    val body: ScheduleBody?
-)
-
-data class ScheduleBody(
-    val StationList: List<StationStop>?
-)
-
-data class StationStop(
-    val StationCode: String?,    // "BBS", "BAM" etc.
-    val StationName: String?,
-    val DepartureTime: String?,  // "05:40" 24h format
-    val ArrivalTime: String?,
-    val StationSerialNumber: Int?
-)
-// ──────────────────────────────────────────────────────────────────────
-
 interface ConfirmTktApi {
-
-    // Seat availability check
     @POST("api/v1/availability/fetchAvailability")
     suspend fun fetchAvailability(
         @Query("trainNo") trainNo: String,
@@ -47,17 +26,10 @@ interface ConfirmTktApi {
         @Query("showNewAlternates") showNewAlternates: Boolean = false,
         @Query("showNewAltText") showNewAltText: Boolean = true
     ): AvailabilityResponse
-
-    // Train timetable / schedule
-    @GET("api/v1/trains/getTrainSchedule")
-    suspend fun getTrainSchedule(
-        @Query("trainNo") trainNo: String
-    ): ScheduleResponse
 }
 
 object ApiClient {
     private const val BASE_URL = "https://cttrainsapi.confirmtkt.com/"
-
     private val DEVICE_ID: String = UUID.randomUUID().toString()
 
     private val httpClient = OkHttpClient.Builder()
