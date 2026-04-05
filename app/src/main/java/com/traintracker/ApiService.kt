@@ -5,7 +5,6 @@ import okhttp3.OkHttpClient
 import okhttp3.ResponseBody
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
-import retrofit2.converter.scalars.ScalarsConverterFactory
 import retrofit2.http.POST
 import retrofit2.http.Query
 import java.util.UUID
@@ -13,7 +12,7 @@ import java.util.concurrent.TimeUnit
 
 interface ConfirmTktApi {
     @POST("api/v1/availability/fetchAvailability")
-    suspend fun fetchAvailabilityRaw(
+    suspend fun fetchRaw(
         @Query("trainNo") trainNo: String,
         @Query("travelClass") travelClass: String,
         @Query("quota") quota: String,
@@ -34,6 +33,8 @@ interface ConfirmTktApi {
 object ApiClient {
     private const val BASE_URL = "https://cttrainsapi.confirmtkt.com/"
     private val DEVICE_ID: String = UUID.randomUUID().toString()
+
+    val gson = GsonBuilder().setLenient().create()
 
     private val httpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -66,7 +67,7 @@ object ApiClient {
     val api: ConfirmTktApi = Retrofit.Builder()
         .baseUrl(BASE_URL)
         .client(httpClient)
-        .addConverterFactory(GsonConverterFactory.create())
+        .addConverterFactory(GsonConverterFactory.create(gson))
         .build()
         .create(ConfirmTktApi::class.java)
 }
