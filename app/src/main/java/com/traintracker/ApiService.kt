@@ -1,5 +1,6 @@
 package com.traintracker
 
+import com.google.gson.GsonBuilder
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -60,10 +61,15 @@ object ApiClient {
         }
         .build()
 
+    // ← Yahi fix hai — lenient Gson
+    private val gson = GsonBuilder()
+        .setLenient()
+        .create()
+
     val api: ConfirmTktApi = Retrofit.Builder()
         .baseUrl(BASE_URL)
         .client(httpClient)
-        .addConverterFactory(GsonConverterFactory.create())
+        .addConverterFactory(GsonConverterFactory.create(gson))
         .build()
         .create(ConfirmTktApi::class.java)
 }
