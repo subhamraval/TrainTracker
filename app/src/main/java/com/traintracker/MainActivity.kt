@@ -134,65 +134,70 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun testNow() {
-        if (!validateForm()) return
+   private fun testNow() {
+    if (!validateForm()) return
 
-        binding.btnTestNow.isEnabled = false
-        binding.tvApiResult.visibility = View.VISIBLE
-        binding.tvApiResult.text = "Checking API..."
+    binding.btnTestNow.isEnabled = false
+    binding.tvApiResult.visibility = View.VISIBLE
+    binding.tvApiResult.text = "Checking..."
 
-        val trainNo     = binding.etTrainNo.text.toString().trim()
-        val fromStation = binding.etFromStation.text.toString().trim().uppercase()
-        val toStation   = binding.etToStation.text.toString().trim().uppercase()
-        val travelClass = binding.actvClass.text.toString()
-        val quota       = binding.actvQuota.text.toString()
+    val trainNo     = binding.etTrainNo.text.toString().trim()
+    val fromStation = binding.etFromStation.text.toString().trim().uppercase()
+    val toStation   = binding.etToStation.text.toString().trim().uppercase()
+    val travelClass = binding.actvClass.text.toString()
+    val quota       = binding.actvQuota.text.toString()
 
-        lifecycleScope.launch {
+    lifecycleScope.launch {
+        try {
+            val rawBody = withContext(Dispatchers.IO) {
+                ApiClient.api.fetchAvailabilityRaw(
+                    trainNo                = trainNo,
+                    travelClass            = travelClass,
+                    quota                  = quota,
+                    sourceStationCode      = fromStation,
+                    destinationStationCode = toStation,
+                    dateOfJourney          = selectedDate
+                ).string()
+            }
+
+            // Raw response pehle 500 chars dikhao — debug ke liye
+            binding.tvApiResult.text = "Raw Response:\n${rawBody.take(500)}"
+            binding.tvApiResult.setTextColor(getColor(android.R.color.holo_blue_dark))
+
+            // Try to parse as JSON
             try {
-                val response = withContext(Dispatchers.IO) {
-                    ApiClient.api.fetchAvailability(
-                        trainNo                = trainNo,
-                        travelClass            = travelClass,
-                        quota                  = quota,
-                        sourceStationCode      = fromStation,
-                        destinationStationCode = toStation,
-                        dateOfJourney          = selectedDate
-                    )
-                }
+                val gson = com.google.gson.GsonBuilder().setLenient().create()
+                val parsed = gson.fromJson(rawBody, AvailabilityResponse::class.java)
+                val avlList = parsed?.data?.avlDayList
+                val trainName = parsed?.data?.trainName ?: ""
 
-                val avlList   = response.data?.avlDayList
-                val trainName = response.data?.trainName ?: ""
-                val errorMsg  = response.data?.errorMessage
-
-                if (!errorMsg.isNullOrEmpty()) {
-                    binding.tvApiResult.text = "API Error: $errorMsg"
-                    binding.tvApiResult.setTextColor(getColor(android.R.color.holo_red_dark))
-                } else if (avlList.isNullOrEmpty()) {
-                    binding.tvApiResult.text = "Response aaya but data empty.\nTrain number ya station code check karo."
+                if (avlList.isNullOrEmpty()) {
+                    binding.tvApiResult.text = "Parsed OK but data empty!\nRaw: ${rawBody.take(300)}"
                     binding.tvApiResult.setTextColor(getColor(android.R.color.holo_orange_dark))
                 } else {
                     val target = avlList.find { matchDates(it.availablityDate, selectedDate) }
                     if (target == null) {
-                        val allDates = avlList.joinToString(", ") { it.availablityDate }
-                        binding.tvApiResult.text =
-                            "Train: $trainName\nAPI dates: $allDates\nTumhari date '$selectedDate' match nahi hui!"
+                        val dates = avlList.joinToString(", ") { it.availablityDate }
+                        binding.tvApiResult.text = "Train: $trainName\nDates in API: $dates\nTumhari date '$selectedDate' nahi mili!"
                         binding.tvApiResult.setTextColor(getColor(android.R.color.holo_orange_dark))
                     } else {
                         binding.tvApiResult.text =
-                            "Train: $trainName ($trainNo)\n" +
-                            "Status: ${target.availablityStatus}\n" +
-                            "Date: ${target.availablityDate}\n\n" +
-                            "API sahi kaam kar raha hai!"
+                            "SUCCESS!\nTrain: $trainName\nStatus: ${target.availablityStatus}\nDate: ${target.availablityDate}"
                         binding.tvApiResult.setTextColor(getColor(android.R.color.holo_green_dark))
                     }
                 }
-            } catch (e: Exception) {
-                binding.tvApiResult.text = "Connection Error:\n${e.message}"
+            } catch (parseEx: Exception) {
+                binding.tvApiResult.text = "Parse Error: ${parseEx.message}\n\nRaw: ${rawBody.take(300)}"
                 binding.tvApiResult.setTextColor(getColor(android.R.color.holo_red_dark))
             }
-            binding.btnTestNow.isEnabled = true
+
+        } catch (e: Exception) {
+            binding.tvApiResult.text = "Network Error:\n${e.message}"
+            binding.tvApiResult.setTextColor(getColor(android.R.color.holo_red_dark))
         }
+        binding.btnTestNow.isEnabled = true
     }
+}
 
     private fun matchDates(availDate: String, targetDate: String): Boolean {
         val a = availDate.split("-")
