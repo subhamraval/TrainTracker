@@ -16,8 +16,6 @@ class TrackingService : Service() {
         private const val TAG = "TrackingService"
         const val ACTION_START       = "ACTION_START"
         const val ACTION_STOP_MANUAL = "ACTION_STOP_MANUAL"
-
-        // 10 minutes
         private const val CHECK_INTERVAL_MS = 10 * 60 * 1000L
 
         fun startTracking(context: Context, config: TrackingConfig) {
@@ -26,7 +24,6 @@ class TrackingService : Service() {
             TrackingPrefs.setFirstCurrAvbl(context, true)
             TrackingPrefs.saveLastStatus(context, "")
             TrackingPrefs.saveLastCheckedTime(context, "")
-
             context.startForegroundService(
                 Intent(context, TrackingService::class.java).apply {
                     action = ACTION_START
@@ -45,53 +42,36 @@ class TrackingService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var loopJob: Job? = null
-
-    // WakeLock — phone sleep mein bhi check karta rahega
     private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-
             ACTION_START -> {
                 val config = TrackingPrefs.getConfig(this) ?: run {
-                    stopSelf()
-                    return START_NOT_STICKY
+                    stopSelf(); return START_NOT_STICKY
                 }
-
-                // Foreground start karo (MUST be within 5 seconds)
                 startForeground(
                     NotificationHelper.NOTIF_ID_FOREGROUND,
                     NotificationHelper.buildForegroundNotification(
                         this, config.trainNo, config.travelClass
                     )
                 )
-
                 acquireWakeLock()
                 startTrackingLoop(config)
             }
-
             ACTION_STOP_MANUAL -> {
                 TrackingPrefs.setTracking(this, false)
-                NotificationHelper.sendAlert(
-                    this,
-                    "🛑 Tracking Stopped",
-                    "Track Stopped Manually"
-                )
+                NotificationHelper.sendAlert(this, "Tracking Stopped", "Track Stopped Manually")
                 shutdown()
             }
         }
-
-        // START_STICKY — agar system ne kill kiya toh Android khud restart karega service
         return START_STICKY
     }
 
     private fun startTrackingLoop(config: TrackingConfig) {
         loopJob?.cancel()
         loopJob = serviceScope.launch {
-            // Pehli baar immediately check karo
             checkAvailability(config)
-
-            // Phir har 10 minute mein
             while (isActive && TrackingPrefs.isTracking(this@TrackingService)) {
                 delay(CHECK_INTERVAL_MS)
                 if (!isActive || !TrackingPrefs.isTracking(this@TrackingService)) break
@@ -101,27 +81,18 @@ class TrackingService : Service() {
     }
 
     private suspend fun checkAvailability(config: TrackingConfig) {
-        Log.d(TAG, "Checking train ${config.trainNo} | class ${config.travelClass}")
+        Log.d(TAG, "Checking train ${config.trainNo}")
 
-        // Save last checked time
         val timeFormat = SimpleDateFormat("hh:mm a", Locale.getDefault())
         TrackingPrefs.saveLastCheckedTime(this, timeFormat.format(Date()))
 
-        // Departure time nikal gayi? → stop
         if (hasDeparturePassed(config)) {
             val lastStatus = TrackingPrefs.getLastStatus(this)
             if (lastStatus.startsWith("CURR_AVBL-")) {
-                NotificationHelper.sendAlert(
-                    this,
-                    "❌ No Current Available",
-                    "No Current Available — Train ${config.trainNo} departed from ${config.fromStation}"
-                )
+                NotificationHelper.sendAlert(this, "No Current Available", "No Current Available")
             } else {
-                NotificationHelper.sendAlert(
-                    this,
-                    "🚂 Tracking Ended",
-                    "Train ${config.trainNo} has departed. No CURR_AVBL seat was found."
-                )
+                NotificationHelper.sendAlert(this, "Tracking Ended",
+                    "Train ${config.trainNo} departed. No CURR_AVBL found.")
             }
             TrackingPrefs.setTracking(this, false)
             withContext(Dispatchers.Main) { shutdown() }
@@ -129,105 +100,77 @@ class TrackingService : Service() {
         }
 
         try {
-            val response = ApiClient.api.fetchAvailability(
-                trainNo           = config.trainNo,
-                travelClass       = config.travelClass,
-                quota             = config.quota,
-                sourceStationCode = config.fromStation,
+            // Raw response fetch karo
+            val rawBody = ApiClient.api.fetchRaw(
+                trainNo                = config.trainNo,
+                travelClass            = config.travelClass,
+                quota                  = config.quota,
+                sourceStationCode      = config.fromStation,
                 destinationStationCode = config.toStation,
-                dateOfJourney     = config.dateOfJourney
-            )
+                dateOfJourney          = config.dateOfJourney
+            ).string()
 
-            val avlList = response.data?.avlDayList
+            Log.d(TAG, "Raw response: ${rawBody.take(200)}")
+
+            // Parse karo
+            val response = ApiClient.gson.fromJson(rawBody, AvailabilityResponse::class.java)
+            val avlList = response?.data?.avlDayList
+
             if (avlList.isNullOrEmpty()) {
-                Log.w(TAG, "Empty response. Error: ${response.data?.errorMessage}")
+                Log.w(TAG, "Empty avlDayList. Error: ${response?.data?.errorMessage}")
                 return
             }
 
-            // Find the entry for user's journey date
             val targetDay = avlList.find { matchDates(it.availablityDate, config.dateOfJourney) }
             if (targetDay == null) {
-                Log.w(TAG, "Date ${config.dateOfJourney} not in response list")
+                Log.w(TAG, "Date ${config.dateOfJourney} not found in response")
                 return
             }
 
             processStatus(targetDay.availablityStatus)
 
         } catch (e: Exception) {
-            Log.e(TAG, "API call failed: ${e.message}")
-            // Network error — quietly retry next interval
+            Log.e(TAG, "Error: ${e.message}")
         }
     }
 
     private fun processStatus(currentStatus: String) {
         val lastStatus = TrackingPrefs.getLastStatus(this)
-        val isCurrAvbl  = currentStatus.startsWith("CURR_AVBL-")
-        val wasAvbl     = lastStatus.startsWith("CURR_AVBL-")
+        val isCurrAvbl = currentStatus.startsWith("CURR_AVBL-")
+        val wasAvbl    = lastStatus.startsWith("CURR_AVBL-")
 
         if (isCurrAvbl) {
-            // Seat count extract karo — "CURR_AVBL-0038" → "38"
             val seatCount = extractCount(currentStatus)
-
             if (TrackingPrefs.isFirstCurrAvbl(this) || !wasAvbl) {
-                // Pehli baar CURR_AVBL mili!
-                NotificationHelper.sendAlert(
-                    this,
-                    "🎉 Current Available Started!",
-                    "Current Available Started $seatCount"
-                )
+                NotificationHelper.sendAlert(this,
+                    "Current Available Started!",
+                    "Current Available Started $seatCount")
                 TrackingPrefs.setFirstCurrAvbl(this, false)
             } else {
-                // Pehle bhi CURR_AVBL tha — count change hua?
                 val prevCount = extractCount(lastStatus)
                 if (seatCount != prevCount) {
-                    NotificationHelper.sendAlert(
-                        this,
-                        "🚃 Seats Updated",
-                        "Current Available $seatCount"
-                    )
+                    NotificationHelper.sendAlert(this,
+                        "Seats Updated",
+                        "Current Available $seatCount")
                 }
-                // Count same hai → koi notification nahi (spam avoid)
             }
-
             TrackingPrefs.saveLastStatus(this, currentStatus)
-
         } else {
-            // CURR_AVBL nahi hai
             if (wasAvbl) {
-                // Pehle tha, ab nahi → track band karo
-                NotificationHelper.sendAlert(
-                    this,
-                    "❌ No Current Available",
-                    "No Current Available"
-                )
+                NotificationHelper.sendAlert(this, "No Current Available", "No Current Available")
                 TrackingPrefs.setTracking(this, false)
                 TrackingPrefs.saveLastStatus(this, currentStatus)
                 serviceScope.launch(Dispatchers.Main) { shutdown() }
             } else {
-                // Abhi tak CURR_AVBL aaya hi nahi — silently track karte raho
                 TrackingPrefs.saveLastStatus(this, currentStatus)
-                Log.d(TAG, "Status: $currentStatus — waiting for CURR_AVBL...")
+                Log.d(TAG, "Status: $currentStatus — waiting for CURR_AVBL")
             }
         }
     }
 
-    /**
-     * "CURR_AVBL-0038" → 38
-     * "CURR_AVBL-0008" → 8
-     */
-    private fun extractCount(status: String): Int {
-        return status
-            .removePrefix("CURR_AVBL-")
-            .trimStart('0')
-            .ifEmpty { "0" }
-            .toIntOrNull() ?: 0
-    }
+    private fun extractCount(status: String): Int =
+        status.removePrefix("CURR_AVBL-").trimStart('0').ifEmpty { "0" }.toIntOrNull() ?: 0
 
-    /**
-     * API response mein date "26-3-2026" aati hai (no leading zero in month)
-     * User input "26-03-2026" deta hai (with leading zero)
-     * Dono ko compare karte hain integer form mein
-     */
     private fun matchDates(availDate: String, targetDate: String): Boolean {
         val a = availDate.split("-")
         val b = targetDate.split("-")
@@ -240,20 +183,17 @@ class TrackingService : Service() {
     private fun hasDeparturePassed(config: TrackingConfig): Boolean {
         return try {
             val sdf = SimpleDateFormat("dd-MM-yyyy HH:mm", Locale.getDefault())
-            val departure = sdf.parse("${config.dateOfJourney} ${config.departureTime}")
-                ?: return false
+            val departure = sdf.parse("${config.dateOfJourney} ${config.departureTime}") ?: return false
             Date().after(departure)
-        } catch (e: Exception) {
-            false
-        }
+        } catch (e: Exception) { false }
     }
 
     private fun acquireWakeLock() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
-            "TrainTracker::TrackingWakeLock"
-        ).also { it.acquire(12 * 60 * 60 * 1000L) } // max 12 hours
+            "TrainTracker::WakeLock"
+        ).also { it.acquire(12 * 60 * 60 * 1000L) }
     }
 
     private fun shutdown() {
@@ -263,14 +203,8 @@ class TrackingService : Service() {
         stopSelf()
     }
 
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        // App swipe karke band karo — service phir bhi chalta rahe
-        // START_STICKY handle karega restart
-        super.onTaskRemoved(rootIntent)
-    }
-
+    override fun onTaskRemoved(rootIntent: Intent?) { super.onTaskRemoved(rootIntent) }
     override fun onBind(intent: Intent?): IBinder? = null
-
     override fun onDestroy() {
         super.onDestroy()
         wakeLock?.let { if (it.isHeld) it.release() }
