@@ -133,69 +133,64 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val result = StringBuilder()
 
-            // ── 1. Availability ───────────────────────────────────
+            // ── 1. Availability ───────────────────────────
             try {
-                val raw    = withContext(Dispatchers.IO) {
+                val raw = withContext(Dispatchers.IO) {
                     ApiClient.api.fetchRaw(
                         trainNo = trainNo, travelClass = travelClass,
                         quota = quota, sourceStationCode = fromStation,
-                        destinationStationCode = toStation, dateOfJourney = selectedDate
+                        destinationStationCode = toStation,
+                        dateOfJourney = selectedDate
                     ).string()
                 }
-                val parsed    = ApiClient.gson.fromJson(raw, AvailabilityResponse::class.java)
-                val avlList   = parsed?.data?.avlDayList
-                val trainName = parsed?.data?.trainName ?: ""
-                val target    = avlList?.find { day -> matchDates(day.availablityDate, selectedDate) }
-
+                val parsed  = ApiClient.gson.fromJson(raw, AvailabilityResponse::class.java)
+                val avlList = parsed?.data?.avlDayList
+                val target  = avlList?.find { day -> matchDates(day.availablityDate, selectedDate) }
                 if (target != null) {
                     result.appendLine("✅ AVAILABILITY OK")
-                    result.appendLine("Train: $trainName")
+                    result.appendLine("Train: ${parsed?.data?.trainName}")
                     result.appendLine("Status: ${target.availablityStatus}")
                 } else {
-                    result.appendLine("⚠️ Availability: data nahi mila")
-                    result.appendLine("Error: ${parsed?.data?.errorMessage}")
+                    result.appendLine("⚠️ Availability: ${parsed?.data?.errorMessage ?: "data nahi mila"}")
                 }
             } catch (e: Exception) {
                 result.appendLine("❌ Availability Error: ${e.message}")
             }
 
             result.appendLine("")
-
-            // ── 2. Departure Time ─────────────────────────────────
-            result.appendLine("Departure time fetch kar raha hai...")
+            result.appendLine("Departure fetch ho raha hai...")
             binding.tvApiResult.text = result.toString()
 
-            val depTime = withContext(Dispatchers.IO) {
+            // ── 2. Departure Time ─────────────────────────
+            val (depTime, debugLog) = withContext(Dispatchers.IO) {
                 ApiClient.getDepartureTime(trainNo, fromStation)
             }
 
+            result.appendLine("=== Debug ===")
+            result.appendLine(debugLog)
+
             if (!depTime.isNullOrEmpty()) {
                 autoFetchedDepartureTime = depTime
-                result.appendLine("✅ DEPARTURE TIME OK")
-                result.appendLine("$fromStation se departure: $depTime")
-                runOnUiThread {
-                    binding.tvDepartureStatus.visibility = View.VISIBLE
-                    binding.tvDepartureStatus.text = "✅ Departure from $fromStation: $depTime"
-                    binding.tvDepartureStatus.setTextColor(getColor(android.R.color.holo_green_dark))
-                    binding.layoutManualTime.visibility = View.GONE
-                }
+                result.appendLine("✅ DEPARTURE: $depTime")
+                binding.tvDepartureStatus.visibility = View.VISIBLE
+                binding.tvDepartureStatus.text = "✅ Departure from $fromStation: $depTime"
+                binding.tvDepartureStatus.setTextColor(getColor(android.R.color.holo_green_dark))
+                binding.layoutManualTime.visibility = View.GONE
             } else {
                 autoFetchedDepartureTime = ""
-                result.appendLine("⚠️ Departure time auto-fetch failed")
-                result.appendLine("Manual input field dikhaya")
-                runOnUiThread { showManualTimeInput("Auto-fetch failed — manually daalo") }
+                result.appendLine("⚠️ Auto-fetch failed — manual daalo")
+                showManualTimeInput("Auto-fetch failed")
             }
 
             binding.tvApiResult.text = result.toString()
-            binding.tvApiResult.setTextColor(getColor(android.R.color.holo_green_dark))
+            binding.tvApiResult.setTextColor(getColor(android.R.color.holo_blue_dark))
             binding.btnTestNow.isEnabled = true
         }
     }
-    
+
     private fun showManualTimeInput(reason: String) {
-        autoFetchedDepartureTime = ""
         binding.tvDepartureStatus.visibility = View.VISIBLE
-        binding.tvDepartureStatus.text = "⚠️ $reason — manually enter karo"
+        binding.tvDepartureStatus.text = "⚠️ $reason — manually daalo"
         binding.tvDepartureStatus.setTextColor(getColor(android.R.color.holo_orange_dark))
         binding.layoutManualTime.visibility = View.VISIBLE
     }
@@ -282,7 +277,8 @@ class MainActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
+                ActivityCompat.requestPermissions(this,
+                    arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
             }
         }
     }
