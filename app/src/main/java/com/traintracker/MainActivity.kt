@@ -3,7 +3,10 @@ package com.traintracker
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.DatePickerDialog
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -30,6 +33,15 @@ class MainActivity : AppCompatActivity() {
         private const val PREF_NAME = "AppPrefs"
     }
 
+    // Service se broadcast aata hai → UI refresh
+    private val statusReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == TrackingService.ACTION_STATUS_UPDATED) {
+                refreshUI()
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
@@ -42,7 +54,20 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Broadcast receiver register karo
+        val filter = IntentFilter(TrackingService.ACTION_STATUS_UPDATED)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(statusReceiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(statusReceiver, filter)
+        }
         refreshUI()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // Broadcast receiver unregister karo
+        try { unregisterReceiver(statusReceiver) } catch (e: Exception) { }
     }
 
     @SuppressLint("BatteryLife")
