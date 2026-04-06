@@ -163,7 +163,7 @@ class MainActivity : AppCompatActivity() {
 
             // ── 2. Departure Time ─────────────────────────
             val (depTime, debugLog) = withContext(Dispatchers.IO) {
-                ApiClient.getDepartureTime(trainNo, fromStation)
+                ApiClient.getDepartureTime(trainNo, fromStation, toStation, selectedDate)
             }
 
             result.appendLine("=== Debug ===")
@@ -187,7 +187,7 @@ class MainActivity : AppCompatActivity() {
             binding.btnTestNow.isEnabled = true
         }
     }
-
+    
     private fun showManualTimeInput(reason: String) {
         binding.tvDepartureStatus.visibility = View.VISIBLE
         binding.tvDepartureStatus.text = "⚠️ $reason — manually daalo"
