@@ -22,6 +22,7 @@
             android:paddingTop="16dp"
             android:paddingBottom="20dp" />
 
+        <!-- FORM CARD -->
         <androidx.cardview.widget.CardView
             android:id="@+id/formCard"
             android:layout_width="match_parent"
@@ -78,7 +79,6 @@
                         android:maxLength="6" />
                 </com.google.android.material.textfield.TextInputLayout>
 
-                <!-- DATE FIELD — overlap fix: hint sirf TextInputLayout par -->
                 <com.google.android.material.textfield.TextInputLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -96,24 +96,11 @@
                         android:inputType="none" />
                 </com.google.android.material.textfield.TextInputLayout>
 
-                <!-- DEPARTURE TIME — auto-fetch status -->
-                <TextView
-                    android:id="@+id/tvDepartureStatus"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:textSize="12sp"
-                    android:paddingStart="4dp"
-                    android:paddingBottom="8dp"
-                    android:visibility="gone" />
-
-                <!-- Manual time — shown only if auto-fetch fails -->
                 <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/layoutManualTime"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:hint="Departure Time from From-Station (e.g. 05:40)"
+                    android:hint="From Station Departure Time (e.g. 05:40)"
                     android:layout_marginBottom="12dp"
-                    android:visibility="gone"
                     style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
                     <com.google.android.material.textfield.TextInputEditText
                         android:id="@+id/etDepartureTime"
@@ -141,7 +128,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:hint="Quota"
-                    android:layout_marginBottom="16dp"
+                    android:layout_marginBottom="20dp"
                     style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.ExposedDropdownMenu">
                     <AutoCompleteTextView
                         android:id="@+id/actvQuota"
@@ -150,26 +137,6 @@
                         android:focusable="false"
                         android:clickable="true" />
                 </com.google.android.material.textfield.TextInputLayout>
-
-                <Button
-                    android:id="@+id/btnTestNow"
-                    android:layout_width="match_parent"
-                    android:layout_height="48dp"
-                    android:text="Test API Now"
-                    android:textSize="14sp"
-                    android:backgroundTint="#1565C0"
-                    android:layout_marginBottom="8dp" />
-
-                <TextView
-                    android:id="@+id/tvApiResult"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:textSize="13sp"
-                    android:padding="12dp"
-                    android:lineSpacingMultiplier="1.4"
-                    android:background="#E3F2FD"
-                    android:layout_marginBottom="12dp"
-                    android:visibility="gone" />
 
                 <Button
                     android:id="@+id/btnTrack"
@@ -183,6 +150,7 @@
             </LinearLayout>
         </androidx.cardview.widget.CardView>
 
+        <!-- TRACKING ACTIVE CARD -->
         <androidx.cardview.widget.CardView
             android:id="@+id/trackingCard"
             android:layout_width="match_parent"
@@ -256,6 +224,7 @@
             </LinearLayout>
         </androidx.cardview.widget.CardView>
 
+        <!-- Stop Button -->
         <Button
             android:id="@+id/btnStop"
             android:layout_width="match_parent"
