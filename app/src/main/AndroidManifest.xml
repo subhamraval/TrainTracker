@@ -1,24 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Internet -->
     <uses-permission android:name="android.permission.INTERNET" />
-
-    <!-- Foreground Service -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-
-    <!-- Notifications (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
-    <!-- Battery Optimization whitelist — app battery kill nahi hoga -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
-
-    <!-- Wake lock — background mein phone sleep na kare check ke time -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-
-    <!-- Boot mein restart — phone restart hone par tracking resume -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
     <application
         android:allowBackup="true"
@@ -28,7 +19,6 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.TrainTracker">
 
-        <!-- Main Activity -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -39,14 +29,16 @@
             </intent-filter>
         </activity>
 
-        <!-- Background Tracking Service -->
         <service
             android:name=".TrackingService"
             android:foregroundServiceType="dataSync"
             android:exported="false"
             android:stopWithTask="false" />
 
-        <!-- Boot Receiver — phone restart ke baad tracking resume karo -->
+        <receiver
+            android:name=".AlarmReceiver"
+            android:exported="false" />
+
         <receiver
             android:name=".BootReceiver"
             android:exported="true">
