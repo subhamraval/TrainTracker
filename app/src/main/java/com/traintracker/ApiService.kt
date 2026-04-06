@@ -12,6 +12,7 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 interface ConfirmTktApi {
+
     @POST("api/v1/availability/fetchAvailability")
     suspend fun fetchRaw(
         @Query("trainNo") trainNo: String,
@@ -30,29 +31,22 @@ interface ConfirmTktApi {
         @Query("showNewAltText") showNewAltText: Boolean = true
     ): ResponseBody
 
-    @GET("api/v1/trains/getTrainInfo")
-    suspend fun getTrainInfo(
-        @Query("trainNo") trainNo: String
-    ): ResponseBody
-}
-
-interface ErailApi {
-    @GET("data.aspx")
-    suspend fun getScheduleData(
-        @Query("Action") action: String = "GetTrainTimeTable",
-        @Query("Password") password: String = "2012",
-        @Query("Data1") trainNo: String
+    // Trains list API — From+To+Date se sab trains milti hain with departure time
+    @GET("api/v1/trains/getTrains")
+    suspend fun getTrainsList(
+        @Query("sourceStationCode") sourceStationCode: String,
+        @Query("destinationStationCode") destinationStationCode: String,
+        @Query("dateOfJourney") dateOfJourney: String
     ): ResponseBody
 }
 
 object ApiClient {
-    private const val BASE_URL  = "https://cttrainsapi.confirmtkt.com/"
-    private const val ERAIL_URL = "https://erail.in/"
+    private const val BASE_URL = "https://cttrainsapi.confirmtkt.com/"
     private val DEVICE_ID: String = UUID.randomUUID().toString()
 
     val gson = GsonBuilder().setLenient().create()
 
-    private val confirmTktClient = OkHttpClient.Builder()
+    private val httpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
@@ -76,105 +70,89 @@ object ApiClient {
             chain.proceed(request)
         }.build()
 
-    private val erailClient = OkHttpClient.Builder()
-        .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .addInterceptor { chain ->
-            val req = chain.request().newBuilder()
-                .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36")
-                .addHeader("Accept", "*/*")
-                .build()
-            chain.proceed(req)
-        }.build()
-
     val api: ConfirmTktApi = Retrofit.Builder()
         .baseUrl(BASE_URL)
-        .client(confirmTktClient)
+        .client(httpClient)
         .addConverterFactory(GsonConverterFactory.create(gson))
         .build()
         .create(ConfirmTktApi::class.java)
 
-    val erailApi: ErailApi = Retrofit.Builder()
-        .baseUrl(ERAIL_URL)
-        .client(erailClient)
-        .addConverterFactory(GsonConverterFactory.create(gson))
-        .build()
-        .create(ErailApi::class.java)
-
-    suspend fun getDepartureTime(trainNo: String, fromStation: String): Pair<String?, String> {
+    suspend fun getDepartureTime(
+        trainNo: String,
+        fromStation: String,
+        toStation: String,
+        dateOfJourney: String
+    ): Pair<String?, String> {
         val debug = StringBuilder()
-
-        // Method 1 — ConfirmTkt getTrainInfo
         try {
-            val raw = api.getTrainInfo(trainNo).string()
-            debug.appendLine("CT raw(150): ${raw.take(150)}")
-            val time = parseConfirmTktSchedule(raw, fromStation)
-            if (!time.isNullOrEmpty()) return Pair(time, debug.toString())
-            debug.appendLine("CT: $fromStation not found")
-        } catch (e: Exception) {
-            debug.appendLine("CT error: ${e.message?.take(100)}")
-        }
+            val raw = api.getTrainsList(
+                sourceStationCode      = fromStation,
+                destinationStationCode = toStation,
+                dateOfJourney          = dateOfJourney
+            ).string()
 
-        // Method 2 — Erail data.aspx
-        try {
-            val raw = erailApi.getScheduleData(trainNo = trainNo).string()
-            debug.appendLine("Erail raw(150): ${raw.take(150)}")
-            val time = parseErailSchedule(raw, fromStation)
-            if (!time.isNullOrEmpty()) return Pair(time, debug.toString())
-            debug.appendLine("Erail: $fromStation not found")
-        } catch (e: Exception) {
-            debug.appendLine("Erail error: ${e.message?.take(100)}")
-        }
+            debug.appendLine("Raw (200): ${raw.take(200)}")
 
-        return Pair(null, debug.toString())
-    }
-
-    private fun parseConfirmTktSchedule(raw: String, fromStation: String): String? {
-        return try {
+            // Parse JSON — array of trains expected
             val el = gson.fromJson(raw, com.google.gson.JsonElement::class.java)
-            val arr = when {
+
+            // Try different response structures
+            val trainsArray = when {
                 el.isJsonArray -> el.asJsonArray
                 el.isJsonObject -> {
                     val obj = el.asJsonObject
                     obj.getAsJsonArray("data")
-                        ?: obj.getAsJsonArray("stationList")
-                        ?: obj.getAsJsonArray("stations")
+                        ?: obj.getAsJsonArray("trains")
+                        ?: obj.getAsJsonArray("trainsList")
                         ?: obj.getAsJsonArray("body")
                 }
                 else -> null
-            } ?: return null
+            }
 
-            for (item in arr) {
+            if (trainsArray == null) {
+                debug.appendLine("No array found in response")
+                return Pair(null, debug.toString())
+            }
+
+            debug.appendLine("Trains found: ${trainsArray.size()}")
+
+            // Find our train by number
+            for (item in trainsArray) {
                 if (!item.isJsonObject) continue
                 val obj = item.asJsonObject
-                val code = obj.get("stationCode")?.asString
-                    ?: obj.get("stnCode")?.asString
-                    ?: obj.get("code")?.asString
+
+                val tNo = obj.get("trainNo")?.asString
+                    ?: obj.get("trainNumber")?.asString
+                    ?: obj.get("number")?.asString
                     ?: continue
-                if (code.equals(fromStation, ignoreCase = true)) {
-                    return obj.get("departureTime")?.asString
+
+                if (tNo.trim() == trainNo.trim()) {
+                    // Departure time fields try karo
+                    val depTime = obj.get("departureTime")?.asString
+                        ?: obj.get("fromStnDepartureTime")?.asString
                         ?: obj.get("depTime")?.asString
                         ?: obj.get("departure")?.asString
-                }
-            }
-            null
-        } catch (e: Exception) { null }
-    }
+                        ?: obj.get("deptTime")?.asString
 
-    private fun parseErailSchedule(raw: String, fromStation: String): String? {
-        // Erail pipe-separated: index1=StationCode, index4=DepTime
-        val lines = raw.split("~")
-        for (line in lines) {
-            val parts = line.split("|")
-            if (parts.size < 5) continue
-            val code = parts.getOrNull(1)?.trim() ?: continue
-            if (code.equals(fromStation, ignoreCase = true)) {
-                val dep = parts.getOrNull(4)?.trim()
-                if (!dep.isNullOrEmpty() && dep != "--" && dep.contains(":")) {
-                    return dep
+                    debug.appendLine("Train $trainNo found! depTime: $depTime")
+                    debug.appendLine("Full train obj: ${obj.toString().take(300)}")
+
+                    if (!depTime.isNullOrEmpty() && depTime != "--") {
+                        return Pair(depTime, debug.toString())
+                    }
                 }
             }
+
+            // Train nahi mila — pehla train ka raw dikhao debug ke liye
+            if (trainsArray.size() > 0) {
+                debug.appendLine("Train $trainNo not found. First train sample:")
+                debug.appendLine(trainsArray[0].toString().take(300))
+            }
+
+        } catch (e: Exception) {
+            debug.appendLine("Error: ${e.message}")
         }
-        return null
+
+        return Pair(null, debug.toString())
     }
 }
